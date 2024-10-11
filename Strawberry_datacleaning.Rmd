@@ -1,0 +1,235 @@
+---
+xtitle: Strawberry Data Cleaning
+output:
+  pdf_document: default
+  html_document: default
+---
+## Introduction
+
+The goal of this project was to clean, organize, and explore the USDA strawberry dataset in and prepare it for analysis. This phase focused on separating organic and non-organic data and further cleaning chemical data used in strawberry cultivation by splitting it into three relevant columns: chemical use, chemical name, and chemical code.
+
+## Intital Data Analysis
+
+I started off by loading the dataset and checking the structure
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+library(tidyr) 
+
+# Loading the dataset
+strawberry_data <- read.csv('strawberries25_v3.csv')
+
+# Displaying the structure of the dataset
+str(strawberry_data)
+```
+
+```{r}
+colnames(strawberry_data)
+```
+We viewed all the columns and understand the data based on the above.
+Based on this, our columns of interest are-
+Program: Type of data collection program (e.g., Census, Survey).
+Domain and Domain Category: Fields that describe whether the data is organic or non-organic, and include information about chemicals.
+```{r}
+# To Get an overview of the unique values in the "Domain" column
+unique_domains <- unique(strawberry_data$Domain)
+print(unique_domains)
+```
+
+```{r}
+# Get unique values from the "Domain.Category" column
+unique_domain_categories <- unique(strawberry_data$Domain.Category)
+
+print(unique_domain_categories)
+
+```
+We filtered the data into two distinct categories: organic and non-organic. This was done based on the Domain and Domain Category columns, which indicate whether the data is associated with organic cultivation.
+
+
+## Splitting organic and non-organic data
+
+```{r}
+organic_data <- strawberry_data %>%
+  filter(grepl("ORGANIC", Domain) | grepl("ORGANIC", Domain.Category))
+
+print(dim(organic_data))
+```
+
+```{r}
+head(organic_data)
+```
+
+
+```{r}
+non_organic_data <- strawberry_data %>%
+  filter(!grepl("ORGANIC", Domain) & !grepl("ORGANIC", Domain.Category))
+
+print(dim(non_organic_data))
+```
+
+```{r}
+head(non_organic_data)
+```
+
+Organic Data: Contains records where "ORGANIC" appears in the Domain or Domain Category.
+Non-Organic Data: Contains all other records that do not have "ORGANIC" in these fields
+
+
+## Splitting the Chemical Data
+
+```{r}
+# Filtering out the chemical-related data from the non-organic dataset
+chemical_data <- non_organic_data %>%
+  filter(grepl("CHEMICAL", Domain) | grepl("CHEMICAL", Domain.Category))
+
+# Splitting the "Domain Category" column into three new columns: Use, Chemical Name, and Code
+chemical_data_clean <- chemical_data %>%
+  separate(Domain.Category, into = c("Use", "Chemical_Name", "Chemical_Code"), 
+           sep = ": | = ", remove = FALSE, extra = "merge", fill = "right")
+
+# Cleaning the "Chemical_Code" to retain only numeric values
+chemical_data_clean <- chemical_data_clean %>%
+  mutate(Chemical_Code = as.numeric(gsub("[^0-9]", "", Chemical_Code)))
+
+# Viewing the cleaned chemical data
+head(chemical_data_clean)
+
+```
+
+
+```{r}
+# Saving the cleaned chemical data 
+write.csv(chemical_data_clean, '~/Desktop/cleaned_chemical_data.csv')
+```
+
+
+```{r}
+chemical_data <- non_organic_data %>%
+  filter(grepl("CHEMICAL", Domain) | grepl("CHEMICAL", Domain.Category))
+
+chemical_data_clean <- chemical_data %>%
+  separate(Domain.Category, into = c("Use", "Chemical_Name", "Chemical_Code"), 
+           sep = ": | = ", remove = FALSE, extra = "merge", fill = "right") %>%
+  mutate(Chemical_Code = as.numeric(gsub("[^0-9]", "", Chemical_Code)),
+         Use = gsub("CHEMICAL, ", "", Use))
+
+head(chemical_data_clean)
+
+write.csv(chemical_data_clean, 'cleaned_chemical_data.csv')
+
+```
+We can now Specify the type of chemical, such as fungicide, insecticide, herbicide; The name of the chemical compound applied (e.g., BACILLUS SUBTILIS); A unique numeric code associated with the chemical.
+
+
+Viewing the Final Column names-
+```{r}
+colnames(strawberry_data)
+```
+```{r}
+colnames(chemical_data_clean)
+```
+
+
+## Data Visualisations
+
+#### Plot of the Chemical Types-
+```{r}
+chemical_summary <- chemical_data_clean %>%
+  group_by(Use) %>%
+  summarise(Count = n())
+
+ggplot(chemical_summary, aes(x = Use, y = Count)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Distribution of Chemical Types", x = "Chemical Type", y = "Count") +
+  theme_minimal()
+
+```
+Fungicides and Insecticides dominate the chemical applications in the dataset, with both categories having over 1,000 records each. Herbicides are applied far less frequently in comparison to fungicides and insecticides. 
+The "Other" category shows a moderate level of use, which might include chemicals that don't fit neatly into fungicide, insecticide, or herbicide categories.
+
+#### Number of Records Per State-
+```{r}
+# Count records per state
+state_summary <- strawberry_data %>%
+  group_by(State) %>%
+  summarise(Record_Count = n())
+
+# Plot 
+ggplot(state_summary, aes(x = reorder(State, -Record_Count), y = Record_Count)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Number of Records per State", x = "State", y = "Record Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+It seems likes California has the highest records for Strawberry Cultivation followe by Florida, North Carolina and others.
+
+
+#### Chemical Use over time-
+```{r}
+# Summarising chemical data by year and chemical type
+chemical_by_year <- chemical_data_clean %>%
+  group_by(Year, Use) %>%
+  summarise(Count = n())
+
+# Plot
+ggplot(chemical_by_year, aes(x = Year, y = Count, fill = Use)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Chemical Use Over Time", x = "Year", y = "Count of Applications") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set3")
+
+```
+The x-axis represents the years, while the y-axis indicates the count of chemical applications.
+The colors represent different chemical types: fungicide (green), herbicide (yellow), insecticide (purple), and other chemicals (red).
+Both fungicide and insecticide use has remained pretty stable between 2018 and 2022, with around 300 applications per year for each chemical type. Fungicide appears to be a little more used than insecticide.
+Herbicide use remains consistently low compared to fungicides and insecticides.
+Other chemicals see a notable increase in usage over time, particularly in 2020 and 2022. This category might contain newer or more specialized chemicals being adopted more frequently.
+
+
+#### Organic vs Non-Organic Records- 
+```{r}
+# Comparing organic and non-organic data
+organic_vs_non_organic <- data.frame(
+  Type = c("Organic", "Non-Organic"),
+  Count = c(nrow(organic_data), nrow(non_organic_data))
+)
+
+# Plot
+ggplot(organic_vs_non_organic, aes(x = Type, y = Count, fill = Type)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Comparison of Organic vs Non-Organic Records", x = "Type", y = "Count") +
+  theme_minimal() +
+  scale_fill_manual(values = c("darkorange", "dodgerblue"))
+
+```
+The non-organic category dominates the dataset, with approximately 12,000 records.
+
+
+#### State-wise Chemical Use- 
+```{r}
+# Grouping by state and chemical type
+chemical_by_state <- chemical_data_clean %>%
+  group_by(State, Use) %>%
+  summarise(Count = n())
+
+# Plot
+ggplot(chemical_by_state, aes(x = reorder(State, -Count), y = Count, fill = Use)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "State-wise Chemical Use", x = "State", y = "Count of Chemical Applications") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_fill_brewer(palette = "Set3")
+
+```
+
+
+California has the highest number of chemical applications across all chemical types, particularly for insecticides and fungicides. This aligns with California's the fact that it was at the top in strawberry production, as observed in earlier plots. Fungicide is the dominant chemical type used in California, closely followed by insecticides.
+Florida shows a similar pattern, but the total count of chemical applications is notably lower than in California.
+
+## Conclusion-
+The USDA strawberry dataset analysis provided several insights into chemical use, regional farming practices, and data distribution between organic and non-organic farming methods. The data has also been Split in a way where it can be used in the future.
+
+
